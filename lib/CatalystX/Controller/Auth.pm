@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A CatalystX::Controller::Authentication controller
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Moose;
 use namespace::autoclean;
@@ -129,7 +129,7 @@ sub login :Chained('base') :PathPart :Args(0)
 	$c->stash( template => $self->login_template, form => $form );
 }
 
-=head2 login ( end-point: /logout )
+=head2 logout ( end-point: /logout )
 
 Logs out, and redirects back to /login.
 
