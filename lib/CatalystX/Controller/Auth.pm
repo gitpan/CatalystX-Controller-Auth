@@ -6,15 +6,15 @@ use warnings;
 
 =head1 NAME
 
-CatalystX::Controller::Auth - The great new CatalystX::Controller::Auth!
+CatalystX::Controller::Auth - A CatalystX::Controller::Authentication controller.
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Moose;
 use namespace::autoclean;
@@ -51,20 +51,13 @@ BEGIN { extends 'Catalyst::Controller'; }
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
-
-    use CatalystX::Controller::Auth;
-
-    my $foo = CatalystX::Controller::Auth->new();
-    ...
-
-=head2 base
-
-Empty.
+This is a Catakyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
 
 =cut
+
+=head1 CHAINS
+
+=head2 base ( mid-point: / )
 
 sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
 {
@@ -345,9 +338,6 @@ Please report any bugs or feature requests to C<bug-catalystx-controller-auth at
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CatalystX-Controller-Auth>.  I will be notified, and then you will
 automatically be notified of progress on your bug as I make changes.
 
-
-
-
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
@@ -377,9 +367,9 @@ L<http://search.cpan.org/dist/CatalystX-Controller-Auth/>
 
 =back
 
-
 =head1 ACKNOWLEDGEMENTS
 
+t0m: Tomas Doran E<lt>bobtfish@bobtfish.netE<gt>
 
 =head1 LICENSE AND COPYRIGHT
 
