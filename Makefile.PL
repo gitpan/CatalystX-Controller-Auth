@@ -15,6 +15,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Test::More' => 0,
         'Moose' => 0,
+        'Catalyst::Controller' => 0,
         'HTML::FormHandlerX::Form::Login' => 0,
         
     },

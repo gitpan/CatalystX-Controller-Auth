@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use Moose;
 use namespace::autoclean;
@@ -44,6 +44,7 @@ has forgot_password_id_unknown => ( is => 'ro', isa => 'Str', default => "Email 
 has action_after_login           => ( is => 'ro', isa => 'Str', default => '/' );
 has action_after_change_password => ( is => 'ro', isa => 'Str', default => '/' );
 
+has forgot_password_email_view           => ( is => 'ro', isa => 'Str', default => 'Email::Template' );
 has forgot_password_email_from           => ( is => 'ro', isa => 'Str', default => '' );
 has forgot_password_email_subject        => ( is => 'ro', isa => 'Str', default => 'Forgot Password' );
 has forgot_password_email_template_plain => ( is => 'ro', isa => 'Str', default => 'reset-password-plain.tt' );
@@ -66,6 +67,42 @@ This is a Catalyst controller for dealing with all instances of logging in, forg
  __PACKAGE__->meta->make_immutable;
  
  1;
+
+Configure it as you like ...
+
+ <Controller::Auth>
+
+         view                                   TT
+         model                                  DB::User
+ 	
+         login_id_field                         email
+         login_id_db_field                      email
+ 	
+         login_template                         auth/login.tt
+         change_password_template               auth/change-password.tt
+         forgot_password_template               auth/forgot-password.tt
+         reset_password_template                auth/reset-password.tt
+ 
+         forgot_password_email_view             Email::Template
+         forgot_password_email_from             "Password Reset" <nobody@example.com>
+         forgot_password_email_subject          Password Reset
+         forgot_password_email_template_plain   reset-password-plain.tt
+ 
+         login_required_message                 "You need to login."
+         already_logged_in_message              "You are already logged in."
+         login_successful_message               "Logged in!"
+         logout_successful_message              "You have been logged out successfully."
+         login_failed_message                   "Bad username or password."
+         password_changed_message               "Password changed."
+         password_reset_message                 "Password reset successfully."
+         forgot_password_id_unknown             "Email address not registered."	
+ 	
+         reset_password_salt                    'tgve546vy6yv%^$Ycv36CW46Y56VH54& H54&%$uy^5 Y^53U&$u v5ev'
+ 	
+         action_after_login                     /admin/index
+         action_after_change_password           /admin/index
+ 
+ </Controller::Auth>
 
 =cut
 
@@ -233,7 +270,7 @@ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 }
 
 
-=head2 forgot_password ( end-point: /auth/*/forgot-password/ )
+=head2 forgot_password ( end-point: /auth/forgot-password/ )
 
 Send a forgotten password toekn to reset it.
 
@@ -283,7 +320,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 				                                               ]
 				};
 			        
-			        $c->forward( $c->view('Email::Template') );
+			        $c->forward( $c->view( $self->forgot_password_email_view ) );
 
 				$c->stash( status_msg => "Password reset link sent to " . $user->email );
 			}
@@ -297,7 +334,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 	$c->stash( template => $self->forgot_password_template, form => $form );
 }
 
-=head2 reset_password ( end-point: /auth/*/reset-password/ )
+=head2 reset_password ( end-point: /auth/reset-password/ )
 
 Reset password using a token sent in an username.
 
