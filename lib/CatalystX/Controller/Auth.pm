@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.06
+Version 0.07
 
 =cut
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Moose;
 use namespace::autoclean;
@@ -49,13 +49,17 @@ has forgot_password_email_from           => ( is => 'ro', isa => 'Str', default 
 has forgot_password_email_subject        => ( is => 'ro', isa => 'Str', default => 'Forgot Password' );
 has forgot_password_email_template_plain => ( is => 'ro', isa => 'Str', default => 'reset-password-plain.tt' );
 
-has reset_password_salt        => ( is => 'ro', isa => 'Str', default => "abc123" );
+has token_salt        => ( is => 'ro', isa => 'Str', default => "abc123" );
 
 BEGIN { extends 'Catalyst::Controller'; }
 
 =head1 SYNOPSIS
 
 This is a Catalyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
+
+You simply extend it for your own authentication controller, then modify your config as required.
+
+Overriding the actions should not be necessary, unless you want to get your hands dirty and really change the logic.
 
  package MyApp::Controller::Auth;
  
@@ -97,7 +101,7 @@ Configure it as you like ...
          password_reset_message                 "Password reset successfully."
          forgot_password_id_unknown             "Email address not registered."	
  	
-         reset_password_salt                    'tgve546vy6yv%^$Ycv36CW46Y56VH54& H54&%$uy^5 Y^53U&$u v5ev'
+         token_salt                             'tgve546vy6yv%^$Ycv36CW46Y56VH54& H54&%$uy^5 Y^53U&$u v5ev'
  	
          action_after_login                     /admin/index
          action_after_change_password           /admin/index
@@ -205,6 +209,133 @@ sub logout :Chained('base') :PathPart :Args(0)
 	$c->response->redirect( $c->uri_for( $self->action_for( 'login' ), { mid => $c->set_status_msg( $self->logout_successful_message ) } ) );
 }
 
+=head2 forgot_password ( end-point: /forgot-password/ )
+
+Send a forgotten password toekn to reset it.
+
+ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
+
+=cut
+
+sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
+{
+	my ( $self, $c ) = @_;
+
+	my $form = HTML::FormHandlerX::Form::Login->new( active => [ qw( email ) ] );
+	
+	if ( $c->req->method eq 'POST' )
+	{
+		$form->process( params => $c->request->params );
+
+		if ( $form->validated )
+		{
+		 	my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $c->request->params->{ $self->login_id_field } } );
+
+		 	if ( $user )
+		 	{
+		 		$c->stash( user => $user );
+		 		
+				$form->token_salt( $self->token_salt );
+
+				$form->add_token_field( $self->login_id_field );
+
+				my $token = $form->token;
+
+				$c->stash( token => $token );
+
+				# send reset password username to the user
+				
+				$c->stash->{ email_template } = { to           => $user->email,
+				                                  from         => $self->forgot_password_email_from,
+				                                  subject      => $self->forgot_password_email_subject,
+				                                  content_type => 'multipart/alternative',
+				                                  templates => [
+				                                                 { template        => $self->forgot_password_email_template_plain,
+				                                                   content_type    => 'text/plain',
+				                                                   charset         => 'utf-8',
+				                                                   encoding        => 'quoted-printable',
+				                                                   view            => $self->view, 
+				                                                 }
+				                                               ]
+				};
+			        
+			        $c->forward( $c->view( $self->forgot_password_email_view ) );
+
+				$c->stash( status_msg => "Password reset link sent to " . $user->email );
+			}
+			else
+			{
+				$c->stash( error_msg => $self->forgot_password_id_unknown );
+			}
+		}
+	}
+
+	$c->stash( template => $self->forgot_password_template, form => $form );
+}
+
+=head2 reset_password ( end-point: /reset-password/ )
+
+Reset password using a token sent in an username.
+
+ sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
+
+=cut
+
+sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
+{
+	my ( $self, $c ) = @_;
+
+	if ( $c->req->method eq 'GET' && ! $c->request->params->{ token } )
+	{
+		$c->response->redirect( $c->uri_for( $self->action_for('forgot_password'), { mid => $c->set_status_msg("Missing token") } ) );
+		return;
+	}
+	
+	my $form;
+	
+	if ( $c->req->method eq 'GET' )
+	{
+		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token ) ] );
+
+		$form->token_salt( $self->token_salt );
+
+		$form->add_token_field( $self->login_id_field );
+
+		$form->process( params => { token => $c->request->params->{ token } } );
+		
+		if ( ! $form->validated )
+		{
+			$c->response->redirect( $c->uri_for( $self->action_for('forgot_password'), { mid => $c->set_error_msg("Invalid token") } ) );
+			return;
+		}
+	}
+	
+	if ( $c->req->method eq 'POST' )
+	{
+		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token password confirm_password ) ] );
+	
+		$form->token_salt( $self->token_salt );
+		
+		$form->add_token_field( $self->login_id_field );
+
+		$form->process( params => $c->request->params );
+
+		if ( $form->validated )
+		{
+			my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $form->field( $self->login_id_field )->value } );
+			
+			$user->password( $form->field('password')->value );
+			
+			$user->update;	
+
+	 		$c->response->redirect( $c->uri_for( $self->action_for('login'), { mid => $c->set_status_msg( $self->password_reset_message ) } ) );
+			return;
+		}
+	}
+	
+	$c->stash( template => $self->reset_password_template, form => $form );
+}
+
 =head2 get ( mid-point: /auth/*/ )
 
 Gets a user and puts them in the stash.
@@ -267,134 +398,6 @@ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 	}
 
 	$c->stash( template => $self->change_password_template, form => $form );
-}
-
-
-=head2 forgot_password ( end-point: /auth/forgot-password/ )
-
-Send a forgotten password toekn to reset it.
-
- sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
-
-=cut
-
-sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
-{
-	my ( $self, $c ) = @_;
-
-	my $form = HTML::FormHandlerX::Form::Login->new( active => [ qw( email ) ] );
-	
-	if ( $c->req->method eq 'POST' )
-	{
-		$form->process( params => $c->request->params );
-
-		if ( $form->validated )
-		{
-		 	my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $c->request->params->{ $self->login_id_field } } );
-
-		 	if ( $user )
-		 	{
-		 		$c->stash( user => $user );
-		 		
-				$form->token_salt( $self->password_reset_message );
-
-				$form->add_token_field( $self->login_id_field );
-
-				my $token = $form->token;
-
-				$c->stash( token => $token );
-
-				# send reset password username to the user
-				
-				$c->stash->{ email_template } = { to           => $user->email,
-				                                  from         => $self->forgot_password_email_from,
-				                                  subject      => $self->forgot_password_email_subject,
-				                                  content_type => 'multipart/alternative',
-				                                  templates => [
-				                                                 { template        => $self->forgot_password_email_template_plain,
-				                                                   content_type    => 'text/plain',
-				                                                   charset         => 'utf-8',
-				                                                   encoding        => 'quoted-printable',
-				                                                   view            => $self->view, 
-				                                                 }
-				                                               ]
-				};
-			        
-			        $c->forward( $c->view( $self->forgot_password_email_view ) );
-
-				$c->stash( status_msg => "Password reset link sent to " . $user->email );
-			}
-			else
-			{
-				$c->stash( error_msg => $self->forgot_password_id_unknown );
-			}
-		}
-	}
-
-	$c->stash( template => $self->forgot_password_template, form => $form );
-}
-
-=head2 reset_password ( end-point: /auth/reset-password/ )
-
-Reset password using a token sent in an username.
-
- sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
-
-=cut
-
-sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
-{
-	my ( $self, $c ) = @_;
-
-	if ( $c->req->method eq 'GET' && ! $c->request->params->{ token } )
-	{
-		$c->response->redirect( $c->uri_for( $self->action_for('forgot_password'), { mid => $c->set_status_msg("Missing token") } ) );
-		return;
-	}
-	
-	my $form;
-	
-	if ( $c->req->method eq 'GET' )
-	{
-		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token ) ] );
-
-		$form->token_salt( $self->password_reset_message );
-
-		$form->add_token_field( $self->login_id_field );
-
-		$form->process( params => { token => $c->request->params->{ token } } );
-		
-		if ( ! $form->validated )
-		{
-			$c->response->redirect( $c->uri_for( $self->action_for('forgot_password'), { mid => $c->set_error_msg("Invalid token") } ) );
-			return;
-		}
-	}
-	
-	if ( $c->req->method eq 'POST' )
-	{
-		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token password confirm_password ) ] );
-	
-		$form->token_salt( $self->password_reset_message );
-		
-		$form->add_token_field( $self->login_id_field );
-
-		$form->process( params => $c->request->params );
-
-		if ( $form->validated )
-		{
-			my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $form->field( $self->login_id_field )->value } );
-			
-			$user->password( $form->field('password')->value );
-			
-			$user->update;	
-
-	 		$c->response->redirect( $c->uri_for( $self->action_for('login'), { mid => $c->set_status_msg( $self->password_reset_message ) } ) );
-			return;
-		}
-	}
-	
-	$c->stash( template => $self->reset_password_template, form => $form );
 }
 
 =head1 AUTHOR
