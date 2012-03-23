@@ -6,20 +6,23 @@ use warnings;
 
 =head1 NAME
 
-CatalystX::Controller::Auth - A CatalystX::Controller::Authentication controller.
+CatalystX::Controller::Auth - A config-driven Catalyst authentication controller base class.
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Moose;
 use namespace::autoclean;
 
 use HTML::FormHandlerX::Form::Login;
+
+has view                       => ( is => 'ro', isa => 'Str', default => 'TT' );
+has model                      => ( is => 'ro', isa => 'Str', default => 'DB::User' );
 
 has login_id_field             => ( is => 'ro', isa => 'Str', default => 'username' );
 has login_id_db_field          => ( is => 'ro', isa => 'Str', default => 'username' );
@@ -51,13 +54,28 @@ BEGIN { extends 'Catalyst::Controller'; }
 
 =head1 SYNOPSIS
 
-This is a Catakyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
+This is a Catalyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
+
+ package MyApp::Controller::Auth;
+ 
+ use Moose;
+ use namespace::autoclean;
+ 
+ BEGIN { extends 'CatalystX::Controller::Auth'; }
+ 
+ __PACKAGE__->meta->make_immutable;
+ 
+ 1;
 
 =cut
 
 =head1 CHAINS
 
 =head2 base ( mid-point: / )
+
+ sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
+
+=cut
 
 sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
 {
@@ -67,6 +85,8 @@ sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
 =head2 authenticated ( mid-point: / )
 
 Chain off this action to make sure people are logged in.
+
+ sub authenticated :Chained('base') :PathPart('') :CaptureArgs(0)
 
 =cut
 
@@ -84,6 +104,8 @@ sub authenticated :Chained('base') :PathPart('') :CaptureArgs(0)
 =head2 login ( end-point: /login )
 
 Login, redirect if already logged in.
+
+ sub login :Chained('base') :PathPart :Args(0)
 
 =cut
 
@@ -133,6 +155,8 @@ sub login :Chained('base') :PathPart :Args(0)
 
 Logs out, and redirects back to /login.
 
+ sub logout :Chained('base') :PathPart :Args(0)
+
 =cut
 
 sub logout :Chained('base') :PathPart :Args(0)
@@ -148,13 +172,15 @@ sub logout :Chained('base') :PathPart :Args(0)
 
 Gets a user and puts them in the stash.
 
+ sub get :Chained('base') :PathPart('auth') :CaptureArgs(1)
+
 =cut
 
 sub get :Chained('base') :PathPart('auth') :CaptureArgs(1)
 {
 	my ( $self, $c, $id ) = @_;
 
-	my $user = $c->model('DB::User')->find( $id );
+	my $user = $c->model( $self->model )->find( $id );
 
 	if ( ! $user )
 	{
@@ -168,6 +194,8 @@ sub get :Chained('base') :PathPart('auth') :CaptureArgs(1)
 =head2 change_password ( end-point: /auth/*/change-password/ )
 
 Change your password.
+
+ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 
 =cut
 
@@ -209,6 +237,8 @@ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 
 Send a forgotten password toekn to reset it.
 
+ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
+
 =cut
 
 sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
@@ -223,7 +253,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 
 		if ( $form->validated )
 		{
-		 	my $user = $c->model('DB::User')->find( { $self->login_id_db_field => $c->request->params->{ $self->login_id_field } } );
+		 	my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $c->request->params->{ $self->login_id_field } } );
 
 		 	if ( $user )
 		 	{
@@ -248,7 +278,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 				                                                   content_type    => 'text/plain',
 				                                                   charset         => 'utf-8',
 				                                                   encoding        => 'quoted-printable',
-				                                                   view            => 'TT', 
+				                                                   view            => $self->view, 
 				                                                 }
 				                                               ]
 				};
@@ -270,6 +300,8 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 =head2 reset_password ( end-point: /auth/*/reset-password/ )
 
 Reset password using a token sent in an username.
+
+ sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
 
 =cut
 
@@ -314,7 +346,7 @@ sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
 
 		if ( $form->validated )
 		{
-			my $user = $c->model('DB::User')->find( { $self->login_id_db_field => $form->field( $self->login_id_field )->value } );
+			my $user = $c->model( $self->model )->find( { $self->login_id_db_field => $form->field( $self->login_id_field )->value } );
 			
 			$user->password( $form->field('password')->value );
 			
