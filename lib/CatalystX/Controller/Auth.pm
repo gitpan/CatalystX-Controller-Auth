@@ -10,16 +10,20 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.07
+Version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
+
+$VERSION = eval $VERSION;
 
 use Moose;
 use namespace::autoclean;
 
 use HTML::FormHandlerX::Form::Login;
+
+has form_handler               => ( is => 'ro', isa => 'Str', default => 'HTML::FormHandlerX::Form::Login' );
 
 has view                       => ( is => 'ro', isa => 'Str', default => 'TT' );
 has model                      => ( is => 'ro', isa => 'Str', default => 'DB::User' );
@@ -30,7 +34,7 @@ has login_id_db_field          => ( is => 'ro', isa => 'Str', default => 'userna
 has login_template             => ( is => 'ro', isa => 'Str', default => 'auth/login.tt');
 has change_password_template   => ( is => 'ro', isa => 'Str', default => 'auth/change-password.tt' );
 has forgot_password_template   => ( is => 'ro', isa => 'Str', default => 'auth/forgot-password.tt' );
-has reset_password_template    => ( is => 'rw', isa => 'Str', default => 'auth/reset-password.tt' );
+has reset_password_template    => ( is => 'ro', isa => 'Str', default => 'auth/reset-password.tt' );
 
 has login_required_message     => ( is => 'ro', isa => 'Str', default => "You need to login." );
 has already_logged_in_message  => ( is => 'ro', isa => 'Str', default => "You are already logged in." );
@@ -57,9 +61,9 @@ BEGIN { extends 'Catalyst::Controller'; }
 
 This is a Catalyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
 
-You simply extend it for your own authentication controller, then modify your config as required.
+It was essentially born out of L<HTML::FormHandlerX::Form::Login>, though that form does not want to become too Catalyst-dependant,
 
-Overriding the actions should not be necessary, unless you want to get your hands dirty and really change the logic.
+Extend it for your own authentication controller, then modify your config as required.
 
  package MyApp::Controller::Auth;
  
@@ -75,7 +79,9 @@ Overriding the actions should not be necessary, unless you want to get your hand
 Configure it as you like ...
 
  <Controller::Auth>
-
+ 
+         form_handler                           HTML::FormHandlerX::Form::Login
+         
          view                                   TT
          model                                  DB::User
  	
@@ -101,7 +107,7 @@ Configure it as you like ...
          password_reset_message                 "Password reset successfully."
          forgot_password_id_unknown             "Email address not registered."	
  	
-         token_salt                             'tgve546vy6yv%^$Ycv36CW46Y56VH54& H54&%$uy^5 Y^53U&$u v5ev'
+         token_salt                             'tgve546vy6yv%^$fghY56VH54& H54&%$uy^5 Y^53U&$u v5ev'
  	
          action_after_login                     /admin/index
          action_after_change_password           /admin/index
@@ -110,12 +116,27 @@ Configure it as you like ...
 
 =cut
 
+Override actions as necessary (hopefully not too much, otherwise I have not built this right).
+
+All feedback and patches are always welcome.
+
 =head1 CHAINS
 
 =head2 base ( mid-point: / )
 
+The controller currently bases off C</base>, ie...
+
  sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
 
+Override the base of the chain if you wish to chain off some other mid-poin in your own app.
+
+ sub base :Chained('/my_base') :PathPart('users') :CaptureArgs(0)
+ {
+         my ( $self, $c ) = @_;
+ 
+         $self->next::method( $c );
+ }
+ 
 =cut
 
 sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
@@ -160,7 +181,7 @@ sub login :Chained('base') :PathPart :Args(0)
 		return;
 	}
 
-	my $form = HTML::FormHandlerX::Form::Login->new( active => [ $self->login_id_field, 'password' ] );
+	my $form = $self->form_handler->new( active => [ $self->login_id_field, 'password' ] );
 	
 	if ( $c->req->method eq 'POST' )
 	{
@@ -221,7 +242,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 {
 	my ( $self, $c ) = @_;
 
-	my $form = HTML::FormHandlerX::Form::Login->new( active => [ qw( email ) ] );
+	my $form = $self->form_handler->new( active => [ qw( email ) ] );
 	
 	if ( $c->req->method eq 'POST' )
 	{
@@ -243,25 +264,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 
 				$c->stash( token => $token );
 
-				# send reset password username to the user
-				
-				$c->stash->{ email_template } = { to           => $user->email,
-				                                  from         => $self->forgot_password_email_from,
-				                                  subject      => $self->forgot_password_email_subject,
-				                                  content_type => 'multipart/alternative',
-				                                  templates => [
-				                                                 { template        => $self->forgot_password_email_template_plain,
-				                                                   content_type    => 'text/plain',
-				                                                   charset         => 'utf-8',
-				                                                   encoding        => 'quoted-printable',
-				                                                   view            => $self->view, 
-				                                                 }
-				                                               ]
-				};
-			        
-			        $c->forward( $c->view( $self->forgot_password_email_view ) );
-
-				$c->stash( status_msg => "Password reset link sent to " . $user->email );
+				$self->_send_password_reset_email( $c, user => $user );
 			}
 			else
 			{
@@ -271,6 +274,39 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 	}
 
 	$c->stash( template => $self->forgot_password_template, form => $form );
+}
+
+=head2 _send_password_reset_email
+
+Uses C<Catalyst::View::Email::Template> by default, override if you like.
+
+=cut
+
+sub _send_password_reset_email
+{
+	my ( $self, $c, %args ) = @_;
+
+	# send reset password username to the user
+	
+	$c->stash->{ email_template } = { to           => $args{ user }->email,
+	                                  from         => $self->forgot_password_email_from,
+	                                  subject      => $self->forgot_password_email_subject,
+	                                  content_type => 'multipart/alternative',
+	                                  templates => [
+	                                                 { template        => $self->forgot_password_email_template_plain,
+	                                                   content_type    => 'text/plain',
+	                                                   charset         => 'utf-8',
+	                                                   encoding        => 'quoted-printable',
+	                                                   view            => $self->view, 
+	                                                 }
+	                                               ]
+	};
+        
+        $c->forward( $c->view( $self->forgot_password_email_view ) );
+
+	$c->stash( status_msg => "Password reset link sent to " . $args{ user }->email );
+
+	return $self;
 }
 
 =head2 reset_password ( end-point: /reset-password/ )
@@ -295,7 +331,7 @@ sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
 	
 	if ( $c->req->method eq 'GET' )
 	{
-		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token ) ] );
+		$form = $self->form_handler->new( active => [ qw( token ) ] );
 
 		$form->token_salt( $self->token_salt );
 
@@ -312,7 +348,7 @@ sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
 	
 	if ( $c->req->method eq 'POST' )
 	{
-		$form = HTML::FormHandlerX::Form::Login->new( active => [ qw( token password confirm_password ) ] );
+		$form = $self->form_handler->new( active => [ qw( token password confirm_password ) ] );
 	
 		$form->token_salt( $self->token_salt );
 		
@@ -371,7 +407,7 @@ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 {
 	my ( $self, $c ) = @_;
 
-	my $form = HTML::FormHandlerX::Form::Login->new( active => [ qw( old_password password confirm_password ) ] );
+	my $form = $self->form_handler->new( active => [ qw( old_password password confirm_password ) ] );
 	
 	if ( $c->req->method eq 'POST' )
 	{
@@ -399,6 +435,11 @@ sub change_password :Chained('get') :PathPart('change-password') :Args(0)
 
 	$c->stash( template => $self->change_password_template, form => $form );
 }
+
+=head1 TODO
+
+Damn more tests!
+
 
 =head1 AUTHOR
 
