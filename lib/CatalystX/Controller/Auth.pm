@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 $VERSION = eval $VERSION;
 
@@ -59,9 +59,11 @@ BEGIN { extends 'Catalyst::Controller'; }
 
 =head1 SYNOPSIS
 
-This is a Catalyst controller for dealing with all instances of logging in, forgotten password, changing passwords, etc.
+This is a Catalyst controller for handling logging in/out and forgotten/changing/resetting passwords.
 
-It was essentially born out of L<HTML::FormHandlerX::Form::Login>, though that form does not want to become too Catalyst-dependant,
+This controller was essentially born out of L<HTML::FormHandlerX::Form::Login> (which it obviously uses), though that form does not want to become dependant on Catalyst.
+
+See L<CatalystX::SimpleLogin> for an alternative (the plan is for both to merge).
 
 Extend it for your own authentication controller, then modify your config as required.
 
