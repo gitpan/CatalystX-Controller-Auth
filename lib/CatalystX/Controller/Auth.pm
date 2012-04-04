@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.09
+Version 0.10
 
 =cut
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 $VERSION = eval $VERSION;
 
@@ -115,8 +115,6 @@ Configure it as you like ...
          action_after_change_password           /admin/index
  
  </Controller::Auth>
-
-=cut
 
 Override actions as necessary (hopefully not too much, otherwise I have not built this right).
 
