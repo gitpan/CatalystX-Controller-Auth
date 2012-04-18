@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 $VERSION = eval $VERSION;
 
@@ -128,7 +128,7 @@ The controller currently bases off C</base>, ie...
 
  sub base :Chained('/base') :PathPart('') :CaptureArgs(0)
 
-Override the base of the chain if you wish to chain off some other mid-poin in your own app.
+Override the base of the chain if you wish to chain off some other mid-point in your own app.
 
  sub base :Chained('/my_base') :PathPart('users') :CaptureArgs(0)
  {
@@ -159,7 +159,7 @@ sub authenticated :Chained('base') :PathPart('') :CaptureArgs(0)
 	if ( ! $c->user_exists )
 	{
 		$c->response->redirect( $c->uri_for( $self->action_for('login'), { mid => $c->set_error_msg( $self->login_required_message ) } ) );
-		return;
+		$c->detach;
 	}
 }
 
@@ -232,7 +232,7 @@ sub logout :Chained('base') :PathPart :Args(0)
 
 =head2 forgot_password ( end-point: /forgot-password/ )
 
-Send a forgotten password toekn to reset it.
+Send a forgotten password token to reset it.
 
  sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 
@@ -278,7 +278,7 @@ sub forgot_password :Chained('base') :PathPart('forgot-password') :Args(0)
 
 =head2 _send_password_reset_email
 
-Uses C<Catalyst::View::Email::Template> by default, override if you like.
+Uses C<Catalyst::View::Email::Template> by default.
 
 =cut
 
@@ -311,7 +311,7 @@ sub _send_password_reset_email
 
 =head2 reset_password ( end-point: /reset-password/ )
 
-Reset password using a token sent in an username.
+Reset password using a token sent in an email.
 
  sub reset_password :Chained('base') :PathPart('reset-password') :Args(0)
 
