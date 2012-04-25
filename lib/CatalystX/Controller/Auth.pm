@@ -10,11 +10,11 @@ CatalystX::Controller::Auth - A config-driven Catalyst authentication controller
 
 =head1 VERSION
 
-Version 0.12
+Version 0.13
 
 =cut
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 $VERSION = eval $VERSION;
 
@@ -58,6 +58,11 @@ has forgot_password_email_view           => ( is => 'ro', isa => 'Str', default 
 has forgot_password_email_from           => ( is => 'ro', isa => 'Str', default => '' );
 has forgot_password_email_subject        => ( is => 'ro', isa => 'Str', default => 'Forgot Password' );
 has forgot_password_email_template_plain => ( is => 'ro', isa => 'Str', default => 'reset-password-plain.tt' );
+
+has register_email_view           => ( is => 'ro', isa => 'Str', default => 'Email::Template' );
+has register_email_from           => ( is => 'ro', isa => 'Str', default => '' );
+has register_email_subject        => ( is => 'ro', isa => 'Str', default => 'Registration Success' );
+has register_email_template_plain => ( is => 'ro', isa => 'Str', default => 'register-plain.tt' );
 
 has token_salt        => ( is => 'ro', isa => 'Str', default => "abc123" );
 
@@ -103,9 +108,14 @@ Configure it as you like ...
          reset_password_template                auth/reset-password.tt
  
          forgot_password_email_view             Email::Template
-         forgot_password_email_from             "Password Reset" <nobody@example.com>
+         forgot_password_email_from             "MyApp" <nobody@example.com>
          forgot_password_email_subject          Password Reset
          forgot_password_email_template_plain   reset-password-plain.tt
+
+         register_email_view                    Email::Template
+         register_email_from                    "MyApp" <nobody@example.com>
+         register_email_subject                 Registration Success
+         register_email_template_plain          register-plain.tt
  
          register_successful_message            "You are now registered"
          register_exists_failed_message         "That username is already registered."
@@ -207,10 +217,12 @@ sub register :Chained('base') :PathPart :Args(0)
 			}
 			else
 			{
-				$c->model( $self->model )->create( { $self->login_id_db_field => $form->field( $self->login_id_field )->value,
-				                                     password                 => $form->field('password')->value,
-				                                   } );
+				my $user = $c->model( $self->model )->create( { $self->login_id_db_field => $form->field( $self->login_id_field )->value,
+				                                                password                 => $form->field('password')->value,
+				                                              } );
 	
+				$self->_send_register_email( $c, user => $user );
+
 				if ( $self->auto_login_after_register )
 				{
 					$c->authenticate( { $self->login_id_db_field => $form->field( $self->login_id_field )->value, password => $form->field('password')->value } );
@@ -223,6 +235,39 @@ sub register :Chained('base') :PathPart :Args(0)
 	}
 
 	$c->stash( template => $self->register_template, form => $form );
+}
+
+=head2 _send_register_email
+
+Uses C<Catalyst::View::Email::Template> by default.
+
+=cut
+
+sub _send_register_email
+{
+	my ( $self, $c, %args ) = @_;
+
+	# send registration email to the user
+	
+	$c->stash->{ email_template } = { to           => $args{ user }->email,
+	                                  from         => $self->register_email_from,
+	                                  subject      => $self->register_email_subject,
+	                                  content_type => 'multipart/alternative',
+	                                  templates => [
+	                                                 { template        => $self->register_email_template_plain,
+	                                                   content_type    => 'text/plain',
+	                                                   charset         => 'utf-8',
+	                                                   encoding        => 'quoted-printable',
+	                                                   view            => $self->view, 
+	                                                 }
+	                                               ]
+	};
+        
+        $c->forward( $c->view( $self->register_email_view ) );
+
+	$c->stash( status_msg => "Registration email sent to " . $args{ user }->email );
+
+	return $self;
 }
 
 =head2 login ( end-point: /login )
